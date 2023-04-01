@@ -7,24 +7,41 @@ import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import Image from "next/image";
 import { LoadingPage, LoadingSpinner } from "~/components/loading";
-import { useState } from "react";
 import { toast } from "react-hot-toast";
 import { PageLayout } from "~/components/layout";
 import { PostView } from "~/components/postview";
+import { type SubmitHandler, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 
 dayjs.extend(relativeTime);
 
-const CreatePostWizard = () => {
-  const { user } = useUser();
+type FormDataType = {
+  content: string;
+};
 
-  const [input, setInput] = useState("");
+const schema = z.object({
+  content: z.string().emoji().nonempty().min(1).max(280),
+});
+
+const CreatePostWizard = () => {
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, dirtyFields, isValid },
+  } = useForm<FormDataType>({
+    resolver: zodResolver(schema),
+  });
+
+  const { user } = useUser();
 
   const ctx = api.useContext();
 
   const { mutate, isLoading: isPosting } = api.posts.create.useMutation({
     onSuccess: () => {
-      setInput("");
       void ctx.posts.getAll.invalidate();
+      reset();
     },
     onError: (e) => {
       const errorMessage = e.data?.zodError?.fieldErrors.content;
@@ -39,6 +56,10 @@ const CreatePostWizard = () => {
 
   if (!user) return null;
 
+  const onSubmit: SubmitHandler<FormDataType> = (formData) => {
+    mutate({ content: formData.content });
+  };
+
   return (
     <div className="flex w-full gap-3">
       <Image
@@ -49,32 +70,33 @@ const CreatePostWizard = () => {
         height={56}
       />
 
-      <input
-        type="text"
-        placeholder="Type some emojis"
-        className="grow bg-transparent outline-none"
-        value={input}
-        onChange={(e) => setInput(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") {
-            e.preventDefault();
-            if (input !== "") {
-              mutate({ content: input });
-            }
-          }
-        }}
-        disabled={isPosting}
-      />
-
-      {input !== "" && !isPosting && (
-        <button onClick={() => mutate({ content: input })}>Post</button>
-      )}
-
-      {isPosting && (
-        <div className="flex items-center justify-center">
-          <LoadingSpinner size={20} />
+      <form onSubmit={handleSubmit(onSubmit)} className="flex w-full gap-3">
+        <div className="relative flex w-full items-center">
+          <input
+            type="text"
+            placeholder="Type some emojis"
+            className="grow bg-transparent outline-none"
+            {...register("content", {
+              disabled: isPosting,
+            })}
+          />
+          {errors.content ? (
+            <span className="absolute -bottom-2 text-sm text-red-400">
+              {errors.content.message}
+            </span>
+          ) : null}
         </div>
-      )}
+
+        {(dirtyFields.content || isValid) && !isPosting && (
+          <button type="submit">Post</button>
+        )}
+
+        {isPosting && (
+          <div className="flex items-center justify-center">
+            <LoadingSpinner size={20} />
+          </div>
+        )}
+      </form>
     </div>
   );
 };
